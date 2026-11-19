@@ -2,7 +2,6 @@ name: Compilar minibunker
 
 on:
   push:
-    branches: [ main, master ]
   pull_request:
   workflow_dispatch:
 
@@ -19,6 +18,22 @@ jobs:
       - name: Descargar el código
         uses: actions/checkout@v4
 
+      # Busca la carpeta del proyecto (la que tiene settings.gradle.kts), esté en la raíz
+      # del repositorio o dentro de una subcarpeta como «minibunker/».
+      - name: Localizar el proyecto
+        id: loc
+        run: |
+          f=$(find . -maxdepth 4 -name settings.gradle.kts -not -path "*/build/*" | head -n 1)
+          if [ -z "$f" ]; then
+            echo "::error::No encuentro settings.gradle.kts en el repositorio. Sube el contenido de la carpeta minibunker (settings.gradle.kts, build.gradle.kts, app/...)."
+            echo "Contenido del repositorio:"; find . -maxdepth 3 -not -path "./.git*" | head -n 80
+            exit 1
+          fi
+          dir=$(dirname "$f")
+          echo "Proyecto en: $dir"
+          echo "dir=$dir" >> "$GITHUB_OUTPUT"
+          ls -la "$dir" "$dir/app"
+
       - name: Instalar JDK 17
         uses: actions/setup-java@v4
         with:
@@ -30,30 +45,35 @@ jobs:
         with:
           packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
 
-      # Se usa Gradle 8.14.3 directamente (la misma versión que el wrapper) para no
-      # depender del permiso de ejecución de gradlew ni de la validación de su .jar.
+      # Gradle 8.14.3 directamente (misma versión que el wrapper): no depende del permiso
+      # de ejecución de gradlew ni de la validación de su .jar.
       - name: Preparar Gradle 8.14.3
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.14.3'
+          build-root-directory: ${{ steps.loc.outputs.dir }}
 
       - name: Compilar el APK de depuración
-        run: gradle assembleDebug --stacktrace --no-daemon
+        working-directory: ${{ steps.loc.outputs.dir }}
+        run: gradle assembleDebug --no-daemon --warning-mode=summary
 
       - name: Ejecutar las pruebas unitarias
+        working-directory: ${{ steps.loc.outputs.dir }}
         run: gradle testDebugUnitTest --no-daemon
 
       - name: Publicar el APK
         uses: actions/upload-artifact@v4
         with:
           name: minibunker-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: ${{ steps.loc.outputs.dir }}/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
-      - name: Publicar informes de pruebas
+      - name: Publicar informes
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: informes-pruebas
-          path: app/build/reports/tests/
+          name: informes
+          path: |
+            ${{ steps.loc.outputs.dir }}/app/build/reports/
+            ${{ steps.loc.outputs.dir }}/build/reports/
           if-no-files-found: ignore
