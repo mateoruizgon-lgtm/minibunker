@@ -24,6 +24,15 @@ jobs:
         id: loc
         run: |
           f=$(find . -maxdepth 4 -name settings.gradle.kts -not -path "*/build/*" | head -n 1)
+          # Si el proyecto se subió como ZIP (p. ej. minibunker.zip), se descomprime aquí.
+          if [ -z "$f" ]; then
+            z=$(find . -maxdepth 2 -name "*.zip" -not -path "./.git/*" | head -n 1)
+            if [ -n "$z" ]; then
+              echo "Descomprimiendo $z"
+              mkdir -p _proyecto && unzip -q -o "$z" -d _proyecto
+              f=$(find _proyecto -maxdepth 4 -name settings.gradle.kts -not -path "*/build/*" | head -n 1)
+            fi
+          fi
           if [ -z "$f" ]; then
             echo "::error::No encuentro settings.gradle.kts en el repositorio. Sube el contenido de la carpeta minibunker (settings.gradle.kts, build.gradle.kts, app/...)."
             echo "Contenido del repositorio:"; find . -maxdepth 3 -not -path "./.git*" | head -n 80
